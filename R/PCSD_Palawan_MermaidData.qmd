@@ -1,6 +1,6 @@
 ---
-title: "Snake Island Monitoring"
-author: "Dan Clark Bacani"
+title: "Dumaran Monitoring"
+author: "PCSD Staff"
 date: today
 date-format: "DD/MM/YYYY"
 format: 
@@ -96,7 +96,7 @@ a the `read_csv()` function as it is part of the tidyverse ecosystem.
 
 ```{r}
 #| label: readData
-dat <- read_csv("../data/2017_AlbinaReef_Dumaran.csv", trim_ws = TRUE)
+dat <- read_csv("../data/Dumaran_LIT_data.csv", trim_ws = TRUE)
 ```
 
 
@@ -166,121 +166,30 @@ dat <- dat |>
     Month,
     Day,
     Depth,
-    Transect_number,
+    Management_name,
     Benthic_category,
-    Benthic_attribute,
-    Growth_form,
-    LIT_measurement
+    LIT_CM
     )
 dat |> as.data.frame() |> head()
 ```
 ### Tally the Benthic Category
 
 ```{r}
+datcount <- dat |> 
+  group_by(Site, Latitude, Longitude, Exposure, Reef_slope, Year, Benthic_category) |> 
+  count(name = "COUNT")
+
 dat <- dat |> 
-  dplyr::select(-Month, -Day, -Benthic_attribute, -Growth_form, - LIT_measurement) |> 
-  group_by(Site, Latitude, Longitude, Exposure, Reef_slope, Year, Transect_number, Benthic_category) |> 
-  count(name = "COUNT") |> 
+  group_by(Site, Latitude, Longitude, Exposure, Reef_slope, Year, Benthic_category) |> 
+  summarise(TOTAL = sum(LIT_CM)) |> 
   ungroup(Benthic_category) |> 
-  mutate(TOTAL = sum(COUNT))
-```
+  mutate(PROP = TOTAL/5000) |> 
+  left_join(datcount)
 
-
-## Lengthen the data
-
-```{r}
-#| label: pivot
-dat <-
-  dat |>
-  pivot_longer(cols = matches("point_.*_classification"),
-    names_to = "type",
-    values_to = "classification"
-    ) 
-dat |> as.data.frame() |> head()
-```
-
-## Joining to the group code lookup data
-Our primary interest in these data will be in exploring patterns in
-broad taxanomic groups such as *Hard coral* and *algae*. Since the
-machine learning tools behind ReefCloud are tuned to classify to finer
-taxonomic resolutions, next task will be to use a lookup table so as
-to assign the higher order group codes (HC and A) to the data.
-
-```{r}
-#| label: readLabelset
-labelset <- read_csv("../data/Palawan_Monitoring.csv", trim_ws = TRUE) 
-```
-
-:::: {.panel-tabset}
-
-### glimpse
-```{r}
-#| label: examineLabelset
-labelset |> glimpse() 
-```
-
-### head
-```{r}
-#| label: examineLabelset1
-## Explore the first 6 rows of the labelseta
-labelset |> head() 
-```
-
-### str
-```{r}
-#| label: examineLabelset2
-labelset |> str() 
-```
-
-### Easystats (datawizard)
-```{r}
-#| label: examineLabelset3
-labelset |> datawizard::data_codebook() |> knitr::kable() 
+dat |> head()
 ```
 ::::
 
-```{r}
-#| label: join
-dat <-
-  dat |>
-  left_join(labelset |>
-              dplyr::select(CODE, GROUP = `FUNCTIONAL GROUP`),
-              by = c("classification" = "CODE")
-    )
-dat |> as.data.frame() |> head() 
-```
-
-## Tally up points
-
-Count the number of points of each type as well as sum up the total
-number of points per image.
-
-```{r}
-#| label: count
-dat <- 
-  dat |> 
-  group_by(across(c(starts_with("site"),
-    starts_with("survey"),
-    type,
-    image_id,
-    GROUP))
-  ) |>
-  summarise(COUNT = n(), .groups = "keep") |> 
-  ungroup(GROUP) |>
-  mutate(TOTAL = sum(COUNT)) |>
-  ungroup() 
-dat |> as.data.frame() |> head() 
-```
-
-## Recode transects
-
-```{r}
-#| label: recode_transects
-dat <- 
-  dat |>
-  mutate(transect_id = paste0(site_id, survey_transect_number)) 
-dat |> as.data.frame() |> head() 
-```
 
 ## Fill in any gaps
 
@@ -296,86 +205,45 @@ IMAGE.
 
 
 ```{r}
-GROUPS <- dat |> pull(GROUP) |> unique()
+GROUPS <- dat |> pull(Benthic_category) |> unique()
+
 data.filler <- dat %>%
   dplyr::select(
-    starts_with("site"),
-    survey_start_date,
-    #Year,
-    survey_depth,
-    transect_id,
-    image_id,
-    type,
-    ## GROUP,
-    TOTAL) |> 
+    Site,
+    Latitude,
+    Longitude,        
+    Exposure,         
+    Reef_slope,
+    Year 
+    ) |> 
   distinct() |> 
- tidyr::crossing(GROUP = GROUPS) 
+ tidyr::crossing(Benthic_category = GROUPS) 
 
 dat <-
   dat |> 
   full_join(data.filler) |>
   group_by(
-    across(c(starts_with("site"),
-      survey_start_date,
-      #Year,
-      survey_depth,
-      transect_id,
-      image_id,
-      type,
-      GROUP
-    ))) |> 
+    across(c(
+        Site,
+        Latitude,
+        Longitude,        
+        Exposure,         
+        Reef_slope,
+        Year,
+        Benthic_category)
+    )) |> 
   mutate(COUNT = ifelse(is.na(COUNT), 0, COUNT),
-    TOTAL = max(TOTAL, na.rm = TRUE)
-  )
-dat |> as.data.frame() |> head() 
-```
-
-## Sum to transect level
-
-
-```{r}
-## Now sum up to transect level
-dat <- 
-  dat |>
-  ungroup(image_id) |>
-  summarise(COUNT = sum(COUNT),
-    TOTAL = sum(TOTAL)
+         PROP = ifelse(is.na(PROP), 0, PROP)
   ) |> 
-  ungroup() |> 
-  droplevels()
-dat |> as.data.frame() |> head() 
-```
-
-## Generate a year field
-
-```{r}
-#| label: mutateYear
-dat <-
-  dat |>
-  mutate(Year = lubridate::year(survey_start_date),
-    TropYear = lubridate::year(survey_start_date + months(3))
-  ) 
-dat |> as.data.frame() |> head() 
-```
-
-## Generate Reef_id
-
-```{r}
-#| label: mutataReef_id
-dat <-
-  dat |>
-  mutate(Reef_id = str_replace(site_name, "(.*) Site.*", "\\1"))
-
+  ungroup(Benthic_category) |> 
+  mutate(TOTAL = sum(COUNT)) |> 
+  ungroup()
+  
 dat |> as.data.frame() |> head() 
 ```
 
 
-## Remove White Beach
 
-```{r}
-dat <- dat |> 
-  filter(site_name != "White Beach")
-```
 
 ### Time series plot
 
@@ -384,33 +252,396 @@ dat <- dat |>
 #| fig.width: 6
 #| fig.height: 4
 dat |>
-  filter(type == "point_machine_classification", GROUP == "HC") |> 
-  ggplot(aes(y =  100*COUNT/TOTAL, x = site_name)) +
+  filter(Benthic_category == "Hard coral") |> 
+  ggplot(aes(y =  100*COUNT/TOTAL * PROP, x = Site)) +
   geom_point() +
-  geom_line(aes(group = transect_id)) + 
   scale_y_continuous("Hard coral cover (%)") +
-  scale_colour_discrete("Survey depth (m)") +
   scale_x_discrete("Site") + 
-  theme_classic()
+  theme_classic() +
+  theme(axis.text = element_text(angle = 30, hjust = 1))
 ```
-
-### Boxplots
 
 ```{r}
-#| label: EDA2
-#| fig.width: 6
-#| fig.height: 4
-dat |>
-  filter(type == "point_machine_classification", GROUP == "HC") |> 
-  ggplot(aes(y =  100*COUNT/TOTAL, x = site_name, colour = factor(survey_depth))) +
-  geom_boxplot()
+palawan_lit <- read.csv("../data/Dumaran_LIT_data.csv")
 ```
+ 
+```{r}
+albina_lit <- palawan_lit |>
+  dplyr::filter(Site == "Albina Reef") |>
+  dplyr::select(Benthic_attribute, LIT_CM)
+```
+
+```{r}
+albina_long <- rep(albina_lit$Benthic_attribute, albina_lit$LIT_CM) |>
+  cbind(Site = "Albina Reef") |>
+  as_tibble() |>
+  rename(Benthos = V1) |>
+  slice(seq(1, 5000, 50))
+```
+
+```{r}
+banawa_lit <- palawan_lit |>
+  dplyr::filter(Site == "Banawa Pt.") |>
+  dplyr::select(Benthic_attribute, LIT_CM)
+```
+
+```{r}
+banawa_long <- rep(banawa_lit$Benthic_attribute, banawa_lit$LIT_CM) |>
+  cbind(Site = "Banawa Pt.") |>
+  as_tibble() |>
+  rename(Benthos = V1) |>
+  slice(seq(1, 5000, 50))
+```
+
+```{r}
+cabugawan_lit <- palawan_lit |>
+  dplyr::filter(Site == "Cabugawan Island") |>
+  dplyr::select(Benthic_attribute, LIT_CM)
+```
+
+```{r}
+cabugawan_long <- rep(cabugawan_lit$Benthic_attribute, cabugawan_lit$LIT_CM) |>
+  cbind(Site = "Cabugawan Island") |>
+  as_tibble() |>
+  rename(Benthos = V1) |>
+  slice(seq(1, 5000, 50))
+```
+
+```{r}
+calaparan_lit <- palawan_lit |>
+  dplyr::filter(Site == "Calaparan Reef") |>
+  dplyr::select(Benthic_attribute, LIT_CM)
+```
+
+```{r}
+calaparan_long <- rep(calaparan_lit$Benthic_attribute, calaparan_lit$LIT_CM) |>
+  cbind(Site = "Calaparan Reef") |>
+  as_tibble() |>
+  rename(Benthos = V1) |>
+  slice(seq(1, 5000, 50))
+```
+
+```{r}
+calasag_lit <- palawan_lit |>
+  dplyr::filter(Site == "Calasag Pt.") |>
+  dplyr::select(Benthic_attribute, LIT_CM)
+```
+
+```{r}
+calasag_long <- rep(calasag_lit$Benthic_attribute, calasag_lit$LIT_CM) |>
+  cbind(Site = "Calasag Pt.") |>
+  as_tibble() |>
+  rename(Benthos = V1) |>
+  slice(seq(1, 5000, 50))
+```
+
+```{r}
+capayas_lit <- palawan_lit |>
+  dplyr::filter(Site == "Capayas") |>
+  dplyr::select(Benthic_attribute, LIT_CM)
+```
+
+```{r}
+capayas_long <- rep(capayas_lit$Benthic_attribute, capayas_lit$LIT_CM) |>
+  cbind(Site = "Capayas") |>
+  as_tibble() |>
+  rename(Benthos = V1) |>
+  slice(seq(1, 5000, 50))
+```
+
+```{r}
+danleg_lit <- palawan_lit |>
+  dplyr::filter(Site == "Danleg") |>
+  dplyr::select(Benthic_attribute, LIT_CM)
+```
+
+```{r}
+danleg_long <- rep(danleg_lit$Benthic_attribute, danleg_lit$LIT_CM) |>
+  cbind(Site = "Danleg") |>
+  as_tibble() |>
+  rename(Benthos = V1) |>
+  slice(seq(1, 5000, 50))
+```
+
+```{r}
+lagan_lit <- palawan_lit |>
+  dplyr::filter(Site == "Lagan") |>
+  dplyr::select(Benthic_attribute, LIT_CM)
+```
+
+```{r}
+lagan_long <- rep(lagan_lit$Benthic_attribute, lagan_lit$LIT_CM) |>
+  cbind(Site = "Lagan") |>
+  as_tibble() |>
+  rename(Benthos = V1) |>
+  slice(seq(1, 5000, 50))
+```
+
+```{r}
+ligit_lit <- palawan_lit |>
+  dplyr::filter(Site == "Ligit") |>
+  dplyr::select(Benthic_attribute, LIT_CM)
+```
+
+```{r}
+ligit_long <- rep(ligit_lit$Benthic_attribute, ligit_lit$LIT_CM) |>
+  cbind(Site = "Ligit") |>
+  as_tibble() |>
+  rename(Benthos = V1) |>
+  slice(seq(1, 5000, 50))
+```
+
+```{r}
+locot_lit <- palawan_lit |>
+  dplyr::filter(Site == "Locot Pt.") |>
+  dplyr::select(Benthic_attribute, LIT_CM)
+```
+
+```{r}
+locot_long <- rep(locot_lit$Benthic_attribute, locot_lit$LIT_CM) |>
+  cbind(Site = "Locot Pt.") |>
+  as_tibble() |>
+  rename(Benthos = V1) |>
+  slice(seq(1, 5000, 50))
+```
+
+```{r}
+lotong_lit <- palawan_lit |>
+  dplyr::filter(Site == "Lotong Pt.") |>
+  dplyr::select(Benthic_attribute, LIT_CM)
+```
+
+```{r}
+lotong_long <- rep(lotong_lit$Benthic_attribute, lotong_lit$LIT_CM) |>
+  cbind(Site = "Lotong Pt.") |>
+  as_tibble() |>
+  rename(Benthos = V1) |>
+  slice(seq(1, 5000, 50))
+```
+
+```{r}
+magsaysay_lit <- palawan_lit |>
+  dplyr::filter(Site == "Magsaysay") |>
+  dplyr::select(Benthic_attribute, LIT_CM)
+```
+
+```{r}
+magsaysay_long <- rep(magsaysay_lit$Benthic_attribute, magsaysay_lit$LIT_CM) |>
+  cbind(Site = "Magsaysay") |>
+  as_tibble() |>
+  rename(Benthos = V1) |>
+  slice(seq(1, 5000, 50))
+```
+
+```{r}
+maruyoruyog_lit <- palawan_lit |>
+  dplyr::filter(Site == "Maruyoruyog Is.") |>
+  dplyr::select(Benthic_attribute, LIT_CM)
+```
+
+```{r}
+maruyoruyog_long <- rep(maruyoruyog_lit$Benthic_attribute, maruyoruyog_lit$LIT_CM) |>
+  cbind(Site = "Maruyoruyog Is.") |>
+  as_tibble() |>
+  rename(Benthos = V1) |>
+  slice(seq(1, 5000, 50))
+```
+
+```{r}
+mayabaca_lit <- palawan_lit |>
+  dplyr::filter(Site == "May-abaca") |>
+  dplyr::select(Benthic_attribute, LIT_CM)
+```
+
+```{r}
+mayabaca_long <- rep(mayabaca_lit$Benthic_attribute, mayabaca_lit$LIT_CM) |>
+  cbind(Site = "May-abaca.") |>
+  as_tibble() |>
+  rename(Benthos = V1) |>
+  slice(seq(1, 5000, 50))
+```
+
+```{r}
+nagtalula_lit <- palawan_lit |>
+  dplyr::filter(Site == "Nagtalula") |>
+  dplyr::select(Benthic_attribute, LIT_CM)
+```
+
+```{r}
+nagtalula_long <- rep(nagtalula_lit$Benthic_attribute, nagtalula_lit$LIT_CM) |>
+  cbind(Site = "Nagtalula") |>
+  as_tibble() |>
+  rename(Benthos = V1) |>
+  slice(seq(1, 5000, 50))
+```
+```{r}
+piawi_lit <- palawan_lit |>
+  dplyr::filter(Site == "Piawi Pt.") |>
+  dplyr::select(Benthic_attribute, LIT_CM)
+```
+
+```{r}
+piawi_long <- rep(piawi_lit$Benthic_attribute, piawi_lit$LIT_CM) |>
+  cbind(Site = "Piawi Pt.") |>
+  as_tibble() |>
+  rename(Benthos = V1) |>
+  slice(seq(1, 5000, 50))
+```
+
+```{r}
+pinagtubusan_lit <- palawan_lit |>
+  dplyr::filter(Site == "Pinagtubusan") |>
+  dplyr::select(Benthic_attribute, LIT_CM)
+```
+
+```{r}
+pinagtubusan_long <- rep(pinagtubusan_lit$Benthic_attribute, pinagtubusan_lit$LIT_CM) |>
+  cbind(Site = "Pinagtubusan") |>
+  as_tibble() |>
+  rename(Benthos = V1) |>
+  slice(seq(1, 5000, 50))
+```
+
+```{r}
+puntod_lit <- palawan_lit |>
+  dplyr::filter(Site == "Puntod Reef") |>
+  dplyr::select(Benthic_attribute, LIT_CM)
+```
+
+```{r}
+puntod_long <- rep(puntod_lit$Benthic_attribute, puntod_lit$LIT_CM) |>
+  cbind(Site = "Puntod Reef") |>
+  as_tibble() |>
+  rename(Benthos = V1) |>
+  slice(seq(1, 5000, 50))
+```
+
+```{r}
+talalaen_lit <- palawan_lit |>
+  dplyr::filter(Site == "Talalaen") |>
+  dplyr::select(Benthic_attribute, LIT_CM)
+```
+
+```{r}
+talalaen_long <- rep(talalaen_lit$Benthic_attribute, talalaen_lit$LIT_CM) |>
+  cbind(Site = "Talalaen") |>
+  as_tibble() |>
+  rename(Benthos = V1) |>
+  slice(seq(1, 5000, 50))
+```
+
+```{r}
+talaytay_lit <- palawan_lit |>
+  dplyr::filter(Site == "Talaytay Island") |>
+  dplyr::select(Benthic_attribute, LIT_CM)
+```
+
+```{r}
+talaytay_long <- rep(talaytay_lit$Benthic_attribute, talaytay_lit$LIT_CM) |>
+  cbind(Site = "Talaytay Island") |>
+  as_tibble() |>
+  rename(Benthos = V1) |>
+  slice(seq(1, 5000, 50))
+```
+
+```{r}
+tamungan_lit <- palawan_lit |>
+  dplyr::filter(Site == "Tamungan_Dumaran Bay") |>
+  dplyr::select(Benthic_attribute, LIT_CM)
+```
+
+```{r}
+tamungan_long <- rep(tamungan_lit$Benthic_attribute, tamungan_lit$LIT_CM) |>
+  cbind(Site = "Tamungan_Dumaran Bay") |>
+  as_tibble() |>
+  rename(Benthos = V1) |>
+  slice(seq(1, 5000, 50))
+```
+
+```{r}
+tourism_lit <- palawan_lit |>
+  dplyr::filter(Site == "Tourism Site") |>
+  dplyr::select(Benthic_attribute, LIT_CM)
+```
+
+```{r}
+tourism_long <- rep(tourism_lit$Benthic_attribute, tourism_lit$LIT_CM) |>
+  cbind(Site = "Tourism Site") |>
+  as_tibble() |>
+  rename(Benthos = V1) |>
+  slice(seq(1, 5000, 50))
+```
+
+
+## Combine data
+
+```{r}
+data_sets <- na.omit(str_extract(ls(), ".*_long"))
+
+dat <- rbind(albina_long, banawa_long, cabugawan_long, calaparan_long, calasag_long, capayas_long, danleg_long, lagan_long, ligit_long, locot_long, lotong_long, magsaysay_long, maruyoruyog_long, mayabaca_long, nagtalula_long, piawi_long, pinagtubusan_long, puntod_long, talaytay_long, tamungan_long, tourism_long)
+
+dat <- dat |> 
+  group_by(Site, Benthos) |> 
+  count(name = "COUNT") |> 
+  ungroup(Benthos) |> 
+  mutate(TOTAL = sum(COUNT))
+  
+```
+
+## Fill in the zeros (blanks)
+
+```{r}
+GROUPS <- dat |> pull(Benthos) |> unique()
+data.filler <- dat |> 
+  dplyr::select(Site) |> 
+  distinct() |> 
+  crossing(Benthos = GROUPS)
+dat <- dat |> 
+  full_join(data.filler) |> 
+  mutate(COUNT = ifelse(is.na(COUNT), 0, COUNT)) |> 
+  mutate(TOTAL = ifelse(is.na(TOTAL), max(TOTAL, na.rm = TRUE), TOTAL))
+```
+
+## Assign groups 
+
+```{r}
+dat <- dat |> 
+  mutate(Groups = case_when(Site %in% 
+                              c("Albina Reef", "Calaparan Reef", "Capayas", 
+                                "Danleg", "Ligit", "Locot Pt.", "Magsaysay", 
+                                "Puntod Reef", "Talalaen") ~ "Dumaran Mainland",
+                            Site %in% c("Banawa Pt.", "Calasag Pt.", "Lagan", 
+                                        "Nagtalula", "Piawi Pt.", "Pinagtubusan",
+                                        "Tamungan_Dumaran Bay", "Cabugawan Island") ~ "Dumaran Island",
+                            Site %in% c("Lotong Pt.", "Maruyoruyog Is.", "May-abaca.",
+                                        "Talaytay Island", "Tourism Site") ~ "Dumaran Islet")
+         )
+```
+
+
 :::
+
+
 
 ## Exploratory data analysis
 
 ::: {.panel-tabset}
-
+```{r}
+dat |>
+  filter(Benthos == "Hard coral") |> 
+  ggplot(aes(y = COUNT/TOTAL, x = Site)) +
+  geom_point() +
+  theme(axis.text.x = element_text(angle = 30, hjust = 1))
+  
+```
+```{r}
+dat |>
+  filter(Benthos == "Hard coral") |> 
+  ggplot(aes(y = COUNT/TOTAL, x = Groups)) +
+  geom_boxplot() 
+ 
+  
+```
 :::
 
 
@@ -418,14 +649,14 @@ dat |>
 ```{r, mhiden=TRUE}
 #| label: hard coral
 dat_hc <- dat |>
-  filter(GROUP == "HC") |>
+  filter(Benthos == "Hard coral") |>
   droplevels()
 ```
 
 ```{r}
 dat_hc |> 
   mutate(COVER = COUNT/TOTAL) |> 
-  group_by(site_name, type) |> 
+  group_by(Groups) |> 
   summarise(
     qlogis(mean(COVER)),
     qlogis(sd(COVER))
@@ -439,13 +670,13 @@ dat_hc |>
 
 ## Binomial model
 ```{r}
-priors <- prior(normal(0, 1), class = "Intercept")+
+priors <- prior(normal(0, 1), class = "Intercept") +
   prior(normal(0, 1), class ="b") +
   prior(student_t(3, 0, 1), class = "sd")
 ```
 
 ```{r}
-form <- bf(COUNT | trials(TOTAL) ~ site_name + (1|transect_id),
+form <- bf(COUNT | trials(TOTAL) ~ Groups + (1|Site),
            family = binomial(link = "logit"))
 ```
 
@@ -465,9 +696,8 @@ model1 <- brm(form,
 ```{r}
 model1 |> conditional_effects() |> 
   plot() |> 
-  _[[1]] #+
-  #geom_point(data = dat_hc, aes(y = COUNT/TOTAL, x = site_name, inherit.aes = FALSE))
-#model1 <- update(model1, sample_prior = "yes")
+  _[[1]] +
+  geom_point(data = dat_hc, aes(y = COUNT/TOTAL, x = Groups), inherit.aes=FALSE)
 ```
 
 ```{r}
@@ -479,8 +709,8 @@ model1 <-
 model1 |> 
   conditional_effects() |> 
   plot() |> 
-  _[[1]] #+
-  #geom_point(data = dat_hc, aes(y = COUNT/TOTAL, x = site_name), inherit.aes = FALSE)
+  _[[1]] +
+  geom_point(data = dat_hc, aes(y = COUNT/TOTAL, x = Groups), inherit.aes = FALSE)
 ```
 
 $$
@@ -546,137 +776,13 @@ wrap_elements(~testUniformity(resids)) +
 
 ::::
 
-## Beta-Binomial model
-
-$$
-\begin{align}
-y_{i} &\sim{} Beta-Bin(\pi_{i}, n_{i})\\
-log\left(\frac{\pi_i}{1-\pi_i}\right) &= \beta_0 + \beta_{1i}  + \beta_{2i} + \beta_{3i}\\
-\beta_0 \sim{} N(0, 1)\\
-\beta_{1-3} \sim{} N(0, 1)\\
-\end{align}
-$$
-
-:::: {.panel-tabset}
-
-### Define priors
-```{r}
-priors <- prior(normal(0, 1), class = "Intercept") +
-  prior(normal(0, 3), class = "b") +
-  prior(gamma(0.01, 0.01), class = "phi")
-```
-
-```{r}
-form <- bf(COUNT | trials(TOTAL) ~ site_name + (1|transect_id), family = beta_binomial(link = "logit"))
-```
-
-```{r}
-model2 <- brm(form,
-              data = dat_hc,
-              prior = priors,
-              sample_prior = "only",
-              iter = 5000,
-              warmup = 1000,
-              chains = 3,
-              cores = 3,
-              thin = 5,
-              refresh = 0,
-              backend = "rstan",
-              control = list(adapt_delta = 0.99, max_treedepth = 20)
-)
-```
-
-
-```{r}
-model2 |> conditional_effects() |> 
-  plot() |> 
-  _[[1]]
-```
-
-```{r}
-model2 <- update(model2, sample_prior = "yes")
-```
-```{r}
-model2 |> conditional_effects() |> 
-  plot() |> 
-  _[[1]]
-```
-
-```{r}
-model2 |> SUYR_prior_and_posterior()
-```
-```{r}
-model2$fit |> stan_trace()
-```
-```{r}
-model2$fit |> stan_ac()
-```
-```{r}
-model2$fit |> stan_rhat()
-```
-```{r}
-model2$fit |> stan_ess()
-```
-
-
-
-
-### Fit prior only model
-
-
-
-
-### Fit full model
-
-
-
-
-
-### MCMC sampling diagnostics
-
-
-### Posterior probability checks
-```{r}
-model2 |> pp_check(type = 'dens_overlay', ndraws = 100)
-```
-
-```{r}
-resids <- model2 |> make_brms_dharma_res(integerResponse = FALSE)
-```
-
-```{r}
-#| fig.width: 15
-#| fig.height: 15
-wrap_elements(~testUniformity(resids)) +
-  wrap_elements(~plotResiduals(resids, form = factor(rep(1, nrow(dat_hc))))) +
-  wrap_elements(~plotResiduals(resids)) +
-  wrap_elements(~testDispersion(resids))
-```
-
-### Model validation
-
-```{r}
-model2 |> 
-  as_draws_df() |> 
-  summarise_draws(median,
-           hdi,
-           rhat,
-           length,
-           ess_bulk,
-           ess_tail) |> 
-  knitr::kable()
-```
-
-
-::::
-
 :::
 
 # Model posterior summaries
 
 
 ```{r}
-model2 |> 
+model1 |> 
 as_draws_df() |> 
 dplyr::select(starts_with("b_")) |>
   mutate(across(everything(), exp)) |> 
@@ -697,10 +803,15 @@ dplyr::select(starts_with("b_")) |>
 
 ## Pairwise constrasts
 ```{r}
-model2 |> emmeans(~site_name, type = 'response') |> 
-  pairs()
-
-model2 |> emmeans(~site_name, type = 'response') |> 
+model1 |> 
+  conditional_effects() |> 
+  plot() |> 
+  _[[1]] +
+  geom_point(data = dat_hc, aes(y = COUNT/TOTAL, x = Groups), inherit.aes = FALSE)
+```
+Express differences as absolute change in percentage units
+```{r}
+model1 |> emmeans(~Groups, type = 'response') |> 
   regrid() |> 
   pairs() |> 
   gather_emmeans_draws() |> 
@@ -709,8 +820,37 @@ model2 |> emmeans(~site_name, type = 'response') |>
             Pg = mean(.value > 0))
 ```
 
-
+Express change as percentage change in percentage units
+```{r}
+model1 |> emmeans(~Groups, type = 'response') |> 
+  regrid() |> 
+  regrid(trans = "log") |> 
+  pairs() |> 
+  gather_emmeans_draws() |> 
+  mutate(.value = exp(.value)) |> 
+  summarise(median_hdci(.value),
+            Pl = mean(.value < 1),
+            Pg = mean(.value > 1))
+```
 If we want to express this in percentage units
+```{r}
+100*(0.9589 - 1)
+```
+```{r}
+dat_hc |> ungroup() |> summarise(Cover = sd(COUNT/TOTAL, na.rm = TRUE))
+
+
+model1 |> emmeans(~Groups, type = 'response') |> 
+  regrid() |> 
+  pairs() |> 
+  rope(range = c(-0.1, 0.1)*0.2) 
+```
+```{r}
+dat_hc |> 
+  group_by(Groups,Site) |> 
+  summarise(mean(COUNT/TOTAL)) |> 
+  as.data.frame()
+```
 
 
 
@@ -737,21 +877,26 @@ model2 |>
 ## R2
 
 ```{r}
-model2 |> 
-  bayes_R2(summary = FALSE) |> 
+model1 |> 
+  bayes_R2(summary = FALSE, re_form = NA) |> 
+  median_hdci()
+```
+```{r}
+model1 |> 
+  bayes_R2(summary = FALSE, re_form = ~(1|Site)) |> 
   median_hdci()
 ```
 
 ```{r}
 g1 <-
-  model2 |> 
-  emmeans(~site_name) |> 
+  model1 |> 
+  emmeans(~Groups) |> 
   gather_emmeans_draws() |> 
   mutate(fit = plogis(.value)) |> 
   summarise(median_hdci(fit)) |> 
-  ggplot(aes(y = y, x = site_name)) +
+  ggplot(aes(y = y, x = Groups)) +
   geom_pointrange(aes(ymin = ymin, ymax = ymax)) +
-  scale_y_continuous("Coral cover (%)", labels = scales::label_number(scale = 100)) +
+  scale_y_continuous("Benthos", labels = scales::label_number(scale = 100)) +
   scale_x_discrete("") +
   theme_classic() +
   theme(axis.text.x = element_text(angle = 30, hjust = 1))
@@ -759,17 +904,17 @@ g1 <-
 
 ```{r}
 g2 <-
-  model2 |> 
-  emmeans(~site_name) |> 
+  model1 |> 
+  emmeans(~Groups) |> 
   regrid() |> 
   pairs() |> 
   gather_emmeans_draws() |> 
-  mutate(contrast = str_replace_all(contrast, "site_name", "")) |> 
+  mutate(contrast = str_replace_all(contrast, "Groups", "")) |> 
   ggplot(aes(x = .value, y = contrast)) +
   stat_halfeye(aes(fill = after_stat(level)), .width = c(0.66, 0.95, 1)) +
   scale_fill_brewer() +
   geom_vline(xintercept = 0, linetype = "dashed") +
-  scale_x_continuous("Cover Difference") +
+  scale_x_continuous("Sites") +
   scale_y_discrete("") +
   theme_classic()
 ```
@@ -786,12 +931,9 @@ g1 + g2
 # Summary figures
 
 ## Model
+
 ```{r}
-dat
-```
-```{r}
-dat |> ggplot(aes(y = site_latitude, x = site_longitude)) +
-  geom_point()
+dat <- dat
 ```
 
 
@@ -807,7 +949,7 @@ ggplot() +
 ```
 ```{r}
 dat <- dat |> 
-  st_as_sf(coords = c("site_longitude", "site_latitude"), 
+  st_as_sf(coords = c("Longitude", "Latitude"), 
       remove = FALSE, 
       crs = 4326)
 dat
@@ -853,7 +995,7 @@ site_map
 
 ```{r}
 #dat
-bbox <- dat |> st_buffer(dist = units::as_units(200, "km")) |> st_bbox()
+bbox <- dat |> st_buffer(dist = units::as_units(250, "km")) |> st_bbox()
 #bbox
 
 overview_map <-ggplot() +
@@ -863,14 +1005,13 @@ overview_map <-ggplot() +
   theme_bw()
 ```
 
-
 ```{r}
-site_map + inset_element(overview_map + 
+  site_map + inset_element(overview_map + 
                            theme(axis.title = element_blank(),
                                  axis.text = element_blank(),
                                  axis.ticks = element_blank()),
                          left = 0.55, bottom = 0.01,
-                         right = 0.99, top = 0.45) 
+                         right = 0.99, top = 0.35) 
 ```
 
 
