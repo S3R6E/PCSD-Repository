@@ -1,6 +1,6 @@
 ---
-title: "Snake Island Monitoring"
-author: "Dan Clark Bacani"
+title: "KIG Monitoring"
+author: "Serge Lloyd Moralo"
 date: today
 date-format: "DD/MM/YYYY"
 format: 
@@ -96,7 +96,7 @@ a the `read_csv()` function as it is part of the tidyverse ecosystem.
 
 ```{r}
 #| label: readData
-dat <- read_csv("../data/SnakeIsland_Reef_Monitoring.csv", trim_ws = TRUE)
+dat <- read_csv("../data/RC-kalayaan-island-group-2023-11-27.csv", trim_ws = TRUE)
 ```
 
 
@@ -209,7 +209,7 @@ to assign the higher order group codes (HC and A) to the data.
 
 ```{r}
 #| label: readLabelset
-labelset <- read_csv("../data/Palawan_Monitoring.csv", trim_ws = TRUE) 
+labelset <- read_csv("../data/RC-kalayaan-island-group-2023-11-27.csv", trim_ws = TRUE) 
 ```
 
 :::: {.panel-tabset}
