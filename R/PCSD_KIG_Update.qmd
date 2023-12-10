@@ -1,0 +1,451 @@
+---
+title: "KIG Monitoring Edits"
+author: "Samuel Chan"
+date: today
+date-format: "DD/MM/YYYY"
+format: 
+  html:
+    ## Format
+    theme: spacelab
+    css: ../resources/ws_style.css
+    html-math-method: mathjax
+    ## Table of contents
+    toc: true
+    toc-float: true
+    ## Numbering
+    number-sections: true
+    number-depth: 3
+    ## Layout
+    fig-caption-location: "bottom"
+    fig-align: "center"
+    fig-width: 4
+    fig-height: 4
+    fig-dpi: 72
+    tbl-cap-location: top
+    ## Code
+    code-fold: false
+    code-tools: true
+    code-summary: "Show the code"
+    code-line-numbers: true
+    code-block-border-left: "#ccc"
+    highlight-style: zenburn
+    ## Execution
+    execute:
+      echo: true
+      cache: false
+    ## Rendering
+    embed-resources: true
+crossref:
+  fig-title: '**Figure**'
+  fig-labels: arabic
+  tbl-title: '**Table**'
+  tbl-labels: arabic
+engine: knitr
+output_dir: "docs"
+documentclass: article
+fontsize: 12pt
+mainfont: Arial
+mathfont: LiberationMono
+monofont: DejaVu Sans Mono
+classoption: a4paper
+bibliography: ../resources/references.bib
+---
+
+```{r}
+#| label: setup
+#| include: false
+
+knitr::opts_chunk$set(cache.lazy = FALSE,
+                      tidy = "styler")
+options(tinytex.engine = "xelatex")
+```
+
+# Preparations
+Load the necessary libraries
+
+```{r}
+#| label: libraries
+#| output: false
+#| eval: true
+#| warning: false
+#| message: false
+#| cache: false
+
+library(tidyverse)
+library(easystats)
+library(knitr)
+library(sf)
+library(rnaturalearth)
+library(brms)
+library(rstan)
+library(tidybayes)
+library(patchwork)
+library(DHARMa)
+library(HDInterval)
+library(emmeans)
+library(maps)
+library(ggspatial)
+source('helperFunctions.R')
+```
+
+# Read in the data
+
+```{r}
+#| label: readData
+dat <- read_csv("../data/RC-kalayaan-island-group-2023-11-27.csv", trim_ws = TRUE)
+```
+:::
+
+
+# Data preparation
+
+## Exclude fields
+
+```{r}
+#| label: selecting 
+dat <- dat |>
+  dplyr::select(site_id,
+    site_name,
+    site_latitude,
+    site_longitude,
+    survey_start_date,
+    survey_depth,
+    survey_transect_number,
+    image_id,
+    image_quality,
+    image_disabled,
+    point_id,
+    point_num,
+    point_machine_classification,
+    point_human_classification
+    )
+dat |> as.data.frame() |> head()
+```
+
+
+## Excluding disabled images
+
+```{r}
+#| label: filter
+dat <-
+  dat |>
+  dplyr::filter(image_disabled == "FALSE")  |> 
+  dplyr::select(-image_quality, -image_disabled)
+dat |> as.data.frame() |> head()
+```
+
+
+## Lengthen the data
+
+```{r}
+#| label: pivot
+dat <-
+  dat |>
+  pivot_longer(cols = matches("point_.*_classification"),
+    names_to = "type",
+    values_to = "classification"
+    ) 
+dat |> as.data.frame() |> head()
+```
+
+## Joining to the group code lookup data
+
+```{r}
+#| label: readLabelset
+labelset <- read_csv("../data/labelset-kalayaan-island-group-2023-11-27.csv", trim_ws = TRUE) 
+```
+
+:::: {.panel-tabset}
+
+### glimpse
+```{r}
+#| label: examineLabelset
+labelset |> glimpse() 
+```
+
+
+```{r}
+#| label: join
+dat <-
+  dat |>
+  left_join(labelset |>
+              dplyr::select(CODE, GROUP = `FUNCTIONAL GROUP`, TAU = TAU_RELATIVE),
+              by = c("classification" = "CODE")
+    )
+dat |> as.data.frame() |> head() 
+```
+
+## Recode transects
+
+```{r}
+#| label: recode_transects
+dat <- 
+  dat |>
+  mutate(transect_name = paste(site_name, year(survey_start_date), survey_transect_number, sep ="_"),
+         transect_id = paste0(site_id, year(survey_start_date), survey_transect_number))
+dat |> as.data.frame() |> head() 
+dat |>  str()
+```
+
+## Tally up points
+
+Count the number of points of each type as well as sum up the total
+number of points per image.
+
+```{r}
+#| label: countCover
+dat_cover <- 
+  dat |> 
+  group_by(across(c(starts_with("site"),
+    starts_with("survey"),
+    starts_with("transect"),
+    type,
+    image_id,
+    GROUP))
+  ) |>
+  summarise(COUNT = n(), .groups = "keep") |> 
+  ungroup(GROUP) |>
+  mutate(TOTAL = sum(COUNT)) |>
+  ungroup() 
+dat_cover |> as.data.frame() |> head() 
+```
+
+## Tally up points
+
+Count the number of points of each type as well as sum up the total
+number of points per image.
+
+```{r}
+#| label: countCover
+dat_tau <- 
+  dat |> 
+  dplyr::select(-image_id, -point_id, -point_num) |> 
+  group_by(across(c(starts_with("site"),
+    starts_with("survey"),
+    starts_with("transect"),
+    type,
+    transect_name, 
+    classification))
+  ) |>  
+  distinct() |>
+  ungroup(classification) |> 
+  summarise(TAU_COUNT = sum(TAU), .groups = "keep") |> 
+  ungroup() 
+dat_tau |> as.data.frame() |> head() 
+```
+
+## Fill in any gaps
+
+```{r}
+GROUPS <- dat_cover |> pull(GROUP) |> unique()
+data.filler <- dat_cover %>%
+  dplyr::select(
+    starts_with("site"),
+    survey_start_date,
+    survey_depth,
+    transect_name,
+    transect_id,
+    image_id,
+    type,
+    TOTAL) |> 
+  distinct() |> 
+ tidyr::crossing(GROUP = GROUPS) 
+
+dat_cover <-
+  dat_cover |> 
+  full_join(data.filler) |>
+  group_by(
+    across(c(starts_with("site"),
+      survey_start_date,
+      survey_depth,
+      transect_name,
+      transect_id,
+      image_id,
+      type,
+      GROUP
+    ))) |> 
+  mutate(COUNT = ifelse(is.na(COUNT), 0, COUNT),
+    TOTAL = max(TOTAL, na.rm = TRUE)
+  )
+dat_cover |> as.data.frame() |> head() 
+```
+
+## Sum to transect level
+
+```{r}
+## Now sum up to transect level
+dat_cover <- 
+  dat_cover |>
+  ungroup(image_id) |>
+  summarise(COUNT = sum(COUNT),
+    TOTAL = sum(TOTAL)
+  ) |> 
+  ungroup() 
+dat_cover |> as.data.frame() |> head() 
+```
+
+## Generate a year field
+
+```{r}
+#| label: mutateYear
+dat_cover <-
+  dat_cover |>
+  mutate(Year = lubridate::year(survey_start_date),
+    TropYear = lubridate::year(survey_start_date + months(3))
+  ) 
+dat_cover |> as.data.frame() |> head() 
+```
+
+
+### Time series plot
+
+```{r}
+#| label: EDA1
+#| fig.width: 6
+#| fig.height: 4
+dat_cover |>
+  filter(type == "point_machine_classification", GROUP == "HC") |> 
+  ggplot(aes(y =  100*COUNT/TOTAL, x = site_name)) +
+  geom_point() +
+  geom_line(aes(group = transect_id)) + 
+  scale_y_continuous("Hard coral cover (%)") +
+  scale_colour_discrete("Survey depth (m)") +
+  scale_x_discrete("Site") + 
+  theme_classic()
+```
+
+### Boxplots
+
+```{r}
+#| label: EDA2
+#| fig.width: 6
+#| fig.height: 4
+dat_cover |>
+  filter(type == "point_machine_classification", GROUP == "HC") |> 
+  ggplot(aes(y =  100*COUNT/TOTAL, x = site_name, colour = factor(survey_depth))) +
+  geom_boxplot()
+```
+:::
+
+## Exploratory data analysis
+
+::: {.panel-tabset}
+
+:::
+
+
+
+```{r, mhiden=TRUE}
+#| label: hard coral
+dat_hc <- dat_cover |>
+  filter(GROUP == "HC") |>
+  droplevels()
+```
+
+```{r}
+dat_hc |> 
+  mutate(COVER = COUNT/TOTAL) |> 
+  group_by(site_name, type) |> 
+  summarise(
+    qlogis(mean(COVER)),
+    qlogis(sd(COVER))
+  )
+```
+
+
+# Fit models
+
+::: {.panel-tabset}
+
+## Binomial model for coral cover
+```{r}
+priors <- prior(normal(0, 1), class = "Intercept")+
+  prior(normal(0, 1), class ="b") +
+  prior(student_t(3, 0, 1), class = "sd")
+```
+
+```{r}
+form <- bf(COUNT | trials(TOTAL) ~ site_name + (1|transect_id),
+           family = binomial(link = "logit"))
+```
+
+```{r}
+model_cover <- brm(form,
+              data = dat_hc,
+              prior = priors,
+              sample_prior = "only",
+              iter = 5000,
+              warmup = 1000,
+              chains = 3,
+              cores = 3,
+              thin = 5,
+              refresh = 0,
+              backend = "rstan")
+```
+```{r}
+modelcover |> conditional_effects() |> 
+  plot() |> 
+  _[[1]]
+#geom_point(data = dat_hc, aes(y = COUNT/TOTAL, x = site_name, inherit.aes = FALSE))
+#model1 <- update(model1, sample_prior = "yes")
+```
+
+```{r}
+model1 <-
+  model1 |> update(sample_prior = "yes")
+```
+
+```{r}
+model1 |> 
+  conditional_effects() |> 
+  plot() |> 
+  _[[1]] #+
+  #geom_point(data = dat_hc, aes(y = COUNT/TOTAL, x = site_name), inherit.aes = FALSE)
+```
+
+
+::: {.panel-tabset}
+```{r}
+dat_tau |> 
+  filter(type == "point_machine_classification") |> 
+  group_by(site_name, type) |> 
+  summarise(
+    log(mean(TAU_COUNT)),
+    log(sd(TAU_COUNT))
+  )
+```
+
+## Poisson model for tau
+```{r}
+priors <- prior(normal(0, 1), class = "Intercept")+
+  prior(normal(0, 1), class ="b") +
+  prior(student_t(3, 0, 1), class = "sd")
+
+get_prior(TAU_COUNT ~ site_name + (1|transect_id),
+           family = poisson(link = "log"), data=dat_tau)
+```
+
+```{r}
+form <- bf(TAU_COUNT ~ site_name + (1|transect_id),
+           family = poisson(link = "log"))
+```
+
+```{r}
+model_tau <- brm(form,
+              data = dat_tau,
+              prior = priors,
+              sample_prior = "only",
+              iter = 5000,
+              warmup = 1000,
+              chains = 3,
+              cores = 3,
+              thin = 5,
+              refresh = 0,
+              backend = "rstan")
+```
+
+```{r}
+model_tau <-
+  model_tau |> update(sample_prior = "yes")
+```
+
