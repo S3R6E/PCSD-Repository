@@ -1,0 +1,674 @@
+---
+title: "Balabac and Quezon Monitoring"
+format: html
+editor: visual
+---
+
+date: today
+date-format: "DD/MM/YYYY"
+format: 
+  html:
+    ## Format
+    theme: spacelab
+    css: ../resources/ws_style.css
+    html-math-method: mathjax
+    ## Table of contents
+    toc: true
+    toc-float: true
+    ## Numbering
+    number-sections: true
+    number-depth: 3
+    ## Layout
+    fig-caption-location: "bottom"
+    fig-align: "center"
+    fig-width: 4
+    fig-height: 4
+    fig-dpi: 72
+    tbl-cap-location: top
+    ## Code
+    code-fold: false
+    code-tools: true
+    code-summary: "Show the code"
+    code-line-numbers: true
+    code-block-border-left: "#ccc"
+    highlight-style: zenburn
+    ## Execution
+    execute:
+      echo: true
+      cache: false
+    ## Rendering
+    embed-resources: true
+crossref:
+  fig-title: '**Figure**'
+  fig-labels: arabic
+  tbl-title: '**Table**'
+  tbl-labels: arabic
+engine: knitr
+output_dir: "docs"
+documentclass: article
+fontsize: 12pt
+mainfont: Arial
+mathfont: LiberationMono
+monofont: DejaVu Sans Mono
+classoption: a4paper
+bibliography: ../resources/references.bib
+---
+
+```{r}
+setwd("~/Repository/PCSD/PCSD-Repository")
+```
+
+
+```{r}
+#| label: setup
+#| include: false
+
+knitr::opts_chunk$set(cache.lazy = FALSE,
+                      tidy = "styler")
+options(tinytex.engine = "xelatex")
+```
+
+# Preparations
+Load the necessary libraries
+
+```{r}
+#| label: libraries
+#| output: false
+#| eval: true
+#| warning: false
+#| message: false
+#| cache: false
+
+library(tidyverse)
+library(easystats)
+library(knitr)
+library(sf)
+library(rnaturalearth)
+library(brms)
+library(rstan)
+library(tidybayes)
+library(patchwork)
+library(DHARMa)
+library(HDInterval)
+library(emmeans)
+library(maps)
+library(ggspatial)
+source('helperFunctions.R')
+```
+
+##Balabac and Quezon
+
+```{r}
+dat2 <- read_csv("../PCSD-Repository/data/BLvsQZ.csv", trim_ws = TRUE)
+```
+
+
+::: {.panel-tabset}
+
+## glimpse
+```{r}
+#| label: examinData
+dat2 |> glimpse() 
+```
+
+## Easystats (datawizard)
+```{r}
+#| label: examinData3
+dat2 |> datawizard::data_codebook() |> knitr::kable() 
+```
+:::
+
+
+# Data preparation
+
+Before we can model these data, they need to be processed into a
+format compatible with statistical modelling. The necessary wrangling
+steps:
+
+1. exclude extraneous (unneeded) fields
+2. exclude poor images
+3. lengthen the data with respect to classification type
+4. join to a labelset lookup
+5. tally up the points per date/image/GROUP/type
+6. recode transect id
+7. fill in the gaps and add the zeros
+8. sum to transect level
+9. generate a Year field from the sample date
+
+::: {.panel-tabset}
+
+## Exclude fields
+
+Although it is often harmless enough to retain the other fields, it
+does make reviewing the data more combersum, so at an early stage
+within this exercise, we will probably restrict the data to just the
+above fields.
+
+```{r}
+#| label: selecting 
+dat <- dat2 |>
+  dplyr::select(site_id,
+    site_name,
+    site_latitude,
+    site_longitude,
+    survey_start_date,
+    survey_depth,
+    survey_transect_number,
+    image_id,
+    image_quality,
+    point_id,
+    point_num,
+    point_machine_classification,
+    point_human_classification
+    )
+dat2 |> as.data.frame() |> head()
+```
+
+
+## Excluding poor images
+
+```{r}
+#| label: filter
+dat2 <-
+  dat2 |>
+  dplyr::filter(is.na(image_quality) | image_quality != 0)  
+dat2 |> as.data.frame() |> head()
+dat2 |> dim()
+```
+
+
+## Lengthen the data
+
+```{r}
+#| label: pivot
+dat2 <-
+  dat2 |>
+  pivot_longer(cols = matches("point_.*_classification"),
+    names_to = "type",
+    values_to = "classification"
+    ) 
+dat2 |> as.data.frame() |> head()
+```
+
+## Joining to the group code lookup data
+Our primary interest in these data will be in exploring patterns in
+broad taxanomic groups such as *Hard coral* and *algae*. Since the
+machine learning tools behind ReefCloud are tuned to classify to finer
+taxonomic resolutions, next task will be to use a lookup table so as
+to assign the higher order group codes (HC and A) to the data.
+
+```{r}
+#| label: readLabelset
+labelset <- read_csv("../PCSD-Repository/data/BL_QZ_labelsets.csv", trim_ws = TRUE) 
+```
+
+:::: {.panel-tabset}
+::::
+
+```{r}
+#| label: join
+dat2 <-
+  dat2 |>
+  left_join(labelset |>
+              dplyr::select(CODE, GROUP = `FUNCTIONAL GROUP`),
+              by = c("classification" = "CODE")
+    )
+dat2 |> as.data.frame() |> head() 
+```
+
+## Tally up points
+
+Count the number of points of each type as well as sum up the total
+number of points per image.
+
+```{r}
+#| label: count
+dat2 <- 
+  dat2 |> 
+  group_by(across(c(starts_with("site"),
+    starts_with("survey"),
+    type,
+    image_id,
+    GROUP))
+  ) |>
+  summarise(COUNT = n(), .groups = "keep") |> 
+  ungroup(GROUP) |>
+  mutate(TOTAL = sum(COUNT)) |>
+  ungroup() 
+dat2 |> as.data.frame() |> head() 
+```
+
+## Recode transects
+
+```{r}
+#| label: recode_transects
+dat2 <- 
+  dat2 |>
+  mutate(transect_id = paste0(site_name, survey_transect_number)) 
+dat2 |> as.data.frame() |> head() 
+```
+
+## Fill in any gaps
+
+Since the data represent the classification of points in images, they
+only include what was present, not what was also absent. For example,
+if all five points are Algae, then this also means that all other
+functional groups are absent - yet this information is lacking in the
+data. For modelling purposes it is vital that we fill in all the zero
+values.
+
+To do so, we must create a data set that contains every GROUP in every
+IMAGE.
+
+
+```{r}
+GROUPS <- dat2 |> pull(GROUP) |> unique()
+data.filler <- dat2 %>%
+  dplyr::select(
+    starts_with("site"),
+    survey_start_date,
+    #Year,
+    survey_depth,
+    transect_id,
+    image_id,
+    type,
+    ## GROUP,
+    TOTAL) |> 
+  distinct() |> 
+ tidyr::crossing(GROUP = GROUPS) 
+
+dat2 <-
+  dat2 |> 
+  full_join(data.filler) |>
+  group_by(
+    across(c(starts_with("site"),
+      survey_start_date,
+      #Year,
+      survey_depth,
+      transect_id,
+      image_id,
+      type,
+      GROUP
+    ))) |> 
+  mutate(COUNT = ifelse(is.na(COUNT), 0, COUNT),
+    TOTAL = max(TOTAL, na.rm = TRUE)
+  )
+dat2 |> as.data.frame() |> head() 
+```
+
+## Sum to transect level
+
+
+```{r}
+## Now sum up to transect level
+dat2 <- 
+  dat2 |>
+  ungroup(image_id) |>
+  summarise(COUNT = sum(COUNT),
+    TOTAL = sum(TOTAL)
+  ) |> 
+  ungroup() |> 
+  droplevels()
+dat2 |> as.data.frame() |> head() 
+```
+
+## Generate a year field
+
+```{r}
+#| label: mutateYear
+dat2 <-
+  dat2 |>
+  mutate(Year = lubridate::year(survey_start_date),
+    TropYear = lubridate::year(survey_start_date + months(3))
+  ) 
+dat2 |> as.data.frame() |> head() 
+```
+
+## Generate Reef_id
+
+```{r}
+#| label: mutataReef_id
+dat2 <-
+  dat2 |>
+  mutate(Reef_id = str_replace(site_name, "(.*) Site.*", "\\1"))
+
+dat2 |> as.data.frame() |> head() 
+```
+
+
+Hard Coral Cover
+
+```{r}
+#| label: EDA1
+#| fig.width: 6
+#| fig.height: 4
+dat2 |>
+  filter(type == "point_machine_classification", GROUP == "HC") |> 
+  ggplot(aes(y =  100*COUNT/TOTAL, x = site_name)) +
+  geom_point() +
+  geom_line(aes(group = transect_id)) + 
+  scale_y_continuous("Hard coral cover (%)") +
+  scale_colour_discrete("Survey depth (m)") +
+  scale_x_discrete("Site") + 
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 25, hjust=1))
+```
+
+### Boxplots
+
+```{r}
+#| label: EDA2
+#| fig.width: 6
+#| fig.height: 4
+dat2 |>
+  filter(type == "point_machine_classification", GROUP == "HC") |> 
+  ggplot(aes(y =  100*COUNT/TOTAL, x = site_name)) +
+  geom_boxplot() +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 30, hjust=1))
+```
+
+:::
+
+## Exploratory data analysis
+
+::: {.panel-tabset}
+
+:::
+
+
+
+```{r, mhiden=TRUE}
+#| label: hard coral
+dat2_hc <- dat2 |>
+  filter(GROUP == "HC") |>
+  droplevels()
+```
+
+```{r}
+dat2_hc |> 
+  mutate(COVER = COUNT/TOTAL) |> 
+  group_by(site_name, type) |> 
+  summarise(
+    qlogis(mean(COVER)),
+    qlogis(sd(COVER))
+  )
+```
+
+# Fit models
+
+::: {.panel-tabset}
+
+## Binomial model
+```{r}
+priors <- prior(normal(0, 1), class = "Intercept")+
+  prior(normal(0, 1), class ="b") +
+  prior(student_t(3, 0, 1), class = "sd")
+```
+
+```{r}
+form4 <- bf(COUNT | trials(TOTAL) ~ site_name + (1|transect_id),
+           family = binomial(link = "logit"))
+```
+
+```{r}
+model5 <- brm(form4,
+              data = dat2_hc,
+              prior = priors,
+              sample_prior = "only",
+              iter = 5000,
+              warmup = 1000,
+              chains = 3,
+              cores = 3,
+              thin = 5,
+              refresh = 0,
+              backend = "rstan")
+```
+```{r}
+model5 |> conditional_effects() |> 
+  plot() |> 
+  _[[1]] #+
+  #geom_point(data = dat2_hc, aes(y = COUNT/TOTAL, x = site_name, inherit.aes = FALSE))
+#model5 <- update(model1, sample_prior = "yes")
+```
+
+```{r}
+model5 <-
+  model5 |> update(sample_prior = "yes")
+```
+
+```{r}
+model5 |> 
+  conditional_effects() |> 
+  plot() |> 
+  _[[1]] #+
+  #geom_point(data = dat2_hc, aes(y = COUNT/TOTAL, x = site_name), inherit.aes = FALSE)
+```
+
+$$
+\begin{align}
+y_{i} &\sim{} Bin(\pi_{i}, n_{i})\\
+log\left(\frac{\pi_i}{1-\pi_i}\right) &= \beta_0 + \beta_{1i}  + \beta_{2i} + \beta_{3i}\\
+\beta_0 \sim{} N(0, 1)\\
+\beta_{1-3} \sim{} N(0, 1)\\
+\end{align}
+$$
+
+
+:::: {.panel-tabset}
+
+### Define priors
+```{r}
+model5 |> SUYR_prior_and_posterior()
+```
+
+### Fit prior only model
+
+```{r}
+model5$fit |> stan_trace()
+```
+```{r}
+model5$fit |> stan_ac()
+```
+```{r}
+model5$fit |> stan_rhat()
+```
+```{r}
+model5$fit |> stan_ess()
+```
+
+### Fit full model
+
+### MCMC sampling diagnostics
+
+### Posterior probability checks
+```{r}
+model5 |> pp_check(type = 'dens_overlay', ndraws = 100)
+```
+
+### Model validation
+
+```{r}
+resids <- model5 |> make_brms_dharma_res(integerResponse = FALSE)
+```
+
+```{r}
+#| fig.width: 15
+#| fig.height: 15
+wrap_elements(~testUniformity(resids)) +
+  wrap_elements(~plotResiduals(resids, form = factor(rep(1, nrow(dat2_hc))))) +
+  wrap_elements(~plotResiduals(resids)) +
+  wrap_elements(~testDispersion(resids))
+```
+
+::::
+
+## Beta-Binomial model
+
+$$
+\begin{align}
+y_{i} &\sim{} Beta-Bin(\pi_{i}, n_{i})\\
+log\left(\frac{\pi_i}{1-\pi_i}\right) &= \beta_0 + \beta_{1i}  + \beta_{2i} + \beta_{3i}\\
+\beta_0 \sim{} N(0, 1)\\
+\beta_{1-3} \sim{} N(0, 1)\\
+\end{align}
+$$
+
+:::: {.panel-tabset}
+
+### Define priors
+```{r}
+priors <- prior(normal(0, 1), class = "Intercept") +
+  prior(normal(0, 3), class = "b") +
+  prior(gamma(0.01, 0.01), class = "phi")
+```
+
+```{r}
+form4 <- bf(COUNT | trials(TOTAL) ~ site_name + (1|transect_id), family = beta_binomial(link = "logit"))
+```
+
+```{r}
+model6 <- brm(form4,
+              data = dat2_hc,
+              prior = priors,
+              sample_prior = "yes",
+              iter = 5000,
+              warmup = 1000,
+              chains = 3,
+              cores = 3,
+              thin = 5,
+              refresh = 0,
+              backend = "rstan",
+              control = list(adapt_delta = 0.99, max_treedepth = 20)
+)
+```
+
+```{r}
+model6 |> conditional_effects() |> 
+  plot() |> 
+  _[[1]]
+```
+
+```{r}
+model6|> SUYR_prior_and_posterior()
+```
+```{r}
+model6$fit |> stan_trace()
+```
+```{r}
+model6$fit |> stan_ac()
+```
+```{r}
+model6$fit |> stan_rhat()
+```
+```{r}
+model6$fit |> stan_ess()
+```
+
+### Posterior probability checks
+```{r}
+model6 |> pp_check(type = 'dens_overlay', ndraws = 100)
+```
+
+```{r}
+resids <- model6 |> make_brms_dharma_res(integerResponse = FALSE)
+```
+
+```{r}
+#| fig.width: 15
+#| fig.height: 15
+wrap_elements(~testUniformity(resids)) +
+  wrap_elements(~plotResiduals(resids, form = factor(rep(1, nrow(dat2_hc))))) +
+  wrap_elements(~plotResiduals(resids)) +
+  wrap_elements(~testDispersion(resids))
+```
+
+### Model validation
+
+```{r}
+model6 |> 
+  as_draws_df() |> 
+  summarise_draws(median,
+           hdi,
+           rhat,
+           length,
+           ess_bulk,
+           ess_tail) |> 
+  knitr::kable()
+```
+
+
+::::
+
+:::
+
+# Model posterior summaries
+
+
+```{r}
+model6 |> 
+as_draws_df() |> 
+dplyr::select(starts_with("b_")) |>
+  mutate(across(everything(), exp)) |> 
+  summarise_draws(median,
+                  hdi,
+                  rhat,
+                  length,
+                  Pl = ~mean(. < 1),
+                  Pg = ~mean(. > 1)
+                  ) |> 
+  knitr::kable()
+```
+
+
+# Further explorations
+
+::: {.panels-tabset}
+
+## Pairwise constrasts
+```{r}
+model6 |> emmeans(~site_name, type = 'response') |> 
+  pairs()
+
+model6 |> emmeans(~site_name, type = 'response') |> 
+  regrid() |> 
+  pairs() |> 
+  gather_emmeans_draws() |> 
+  summarise(median_hdci(.value),
+            Pl = mean(.value < 0),
+            Pg = mean(.value > 0))
+```
+
+
+If we want to express this in percentage units
+
+
+
+## Specific contrasts
+
+```{r}
+model6 |> 
+  emmeans(~site_name) |> 
+  regrid() |> 
+  pairs() |> 
+  gather_emmeans_draws() |> 
+  mutate(contrast = str_replace_all(contrast, "site_name", "")) |> 
+  ggplot(aes(x = .value, y = contrast)) +
+  stat_halfeye(aes(fill = after_stat(level)), .width = c(0.66, 0.95, 1)) +
+  scale_fill_brewer() +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  scale_x_continuous("Cover Difference") +
+  scale_y_discrete("") +
+  theme_classic()
+  
+```
+
+
+## R2
+
+```{r}
+model6 |> 
+  bayes_R2(summary = FALSE) |> 
+  median_hdci()
+```
+
