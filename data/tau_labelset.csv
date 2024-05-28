@@ -1,0 +1,114 @@
+CODE,DESCRIPTION,FUNCTIONAL GROUP,TAU_STRICT,TAU_RELATIVE,TAU_CATEGORY
+BL_ACR,Acropora Bleached,BL_HC,0,0,
+BL_HC,Other Hard Coral Bleached,BL_HC,0,0,
+BL_POC,Pocillopora Bleached,BL_HC,0,0,
+BL_POR,Porites Bleached,BL_HC,0,0,
+CA_CCA,Crustose Coralline Algae,CA,0,0,
+CA_ECA,Erect Coralline Algae,CA,0,0,
+CM,Cyanobacterial Mats,CM,0,0,
+CM_OM,Other Microbial Mats,CM,0,0,
+LOB_ACA,Acanthastrea,HC,1,1,Acanthastrea
+ACR_ACR,Acropora,HC,1,1,6 x Acropora
+ACR_ALV,Alveopora,HC,0,1,
+MER_AST,Astrea,HC,1,1,Montastrea
+ACR_AST,Astreopora,HC,1,1,Astreopora
+MER_COA,Coelastrea,HC,0,1,
+EUP_COE,Coeloseris,HC,1,1,Coeloseris
+COS_COS,Coscinaraea,HC,1,1,Coscinaraea
+MER_CYP,Cyphastrea,HC,1,1,Cyphastrea
+DIP_DIP,Diploastrea,HC,1,1,Diploastrea
+MER_DIS,Dipsastraea,HC,1,1,Favia
+LOB_ECL,Echinophyllia,HC,1,1,Echinophyllia
+MER_ECH,Echinopora,HC,1,1,Echinopora
+EUP_EUP,Euphyllia,HC,1,1,Euphyllia
+MER_FVS,Favites,HC,1,1,Favites
+EUP_FIM,Fimbriaphyllia,HC,0,1,Technically Euphyllia
+EUP_GAL,Galaxea,HC,1,1,Galaxea
+MER_GOS,Goniastrea,HC,1,1,Goniastrea
+POR_GON,Goniopora,HC,1,1,Goniopora
+MER_HYD,Hydnophora,HC,1,1,Hydnophora
+ACR_ISO,Isopora,HC,1,1,Isopora
+LER_LER,Leptastrea,HC,0,1,
+MER_LEP,Leptoria,HC,1,1,Leptoria
+AGA_LEP,Leptoseris,HC,1,1,Leptoseris
+FUN_LIT,Lithophyllon,HC,1,1,Attached fungids
+LOB_LOB,Lobophyllia,HC,1,1,Lobophyllia
+MER_MER,Merulina,HC,1,1,Merulina
+ACR_MON,Montipora,HC,1,1,3 x Montipora
+MER_MYC,Mycedium,HC,1,1,Mycedium
+ACR_OTH,Other Acroporidae,HC,0,1,
+AGA_OTH,Other Agariciidae,HC,0,0,
+COS_OTH,Other Coscinaraeidae,HC,0,0,
+DEN_OTH,Other Dendrophylliidae,HC,0,0,
+EUP_OTH,Other Euphylliidae,HC,0,0,
+FUN_OTH,Other Fungiidae,HC,1,1,Other freeliving fungids
+LOB_OTH,Other Lobophylliidae,HC,0,1,
+MER_OTH,Other Merulinidae,HC,0,1,
+PLE_OTH,Other Plerogyridae,HC,0,0,
+POC_OTH,Other Pocilloporidae,HC,0,1,
+POR_OTH,Other Poritidae,HC,0,1,
+RHI_OTH,Other Rhizangiidae,HC,0,0,
+OUR_OUR,Oulastrea,HC,1,1,Oulastrea
+MER_OUL,Oulophyllia,HC,1,1,Oulophyllia
+LOB_OXY,Oxypora,HC,1,1,Oxypora
+PAC_PAC,Pachyseris,HC,1,1,2 x Pachyseris
+AGA_PAV,Pavona,HC,1,1,Pavona
+MER_PEC,Pectinia,HC,1,1,Pectinia
+PLE_PHY,Physogyra,HC,1,1,Other bubble coral
+MER_PLA,Platygyra,HC,1,1,Platygyra
+PLE_PLE,Plerogyra,HC,1,1,Other bubble coral
+PLS_PLS,Plesiastrea,HC,0,1,
+POC_POC,Pocillopora,HC,1,1,Pocillopora
+FUN_POD,Podabacia,HC,1,1,Attached fungiids
+POR_POR,Porites,HC,1,1,3 x Porites
+PSA_PSA,Psammocora,HC,0,1,
+RHI_PSE,Pseudosiderastrea,HC,0,1,
+POC_SER,Seriatopora,HC,1,1,Seriatopora
+POC_STY,Stylophora,HC,1,1,Stylophora
+MER_TRA,Trachyphyllia,HC,0,1,
+DEN_TUB,Tubastraea,HC,0,1,
+DEN_TUR,Turbinaria,HC,1,1,Turbinaria
+MA_BR,Brown Macroalgae,MA,0,0,
+MA_RE_ENC,Encrusting Red Macroalgae,MA,0,0,
+MA_GR,Green Macroalgae,MA,0,0,
+MA,Macroalgae,MA,0,0,
+MA_RE,Red Macroalgae,MA,0,0,
+AST,Asteroidea (Sea stars),MI,0,0,
+CRI,Crinoidae (Feather Stars),MI,0,0,
+AST_COT,Crown-of-Thorns,MI,0,0,
+ECH_DIA,Diadema,MI,0,0,
+ECH,Echinoidea (Sea Urchins),MI,0,0,
+HOL,Holothuroidea (Sea Cucumbers),MI,0,0,
+MI,Mobile Invertebrates,MI,0,0,
+OT,Others - Abiotic,OT,0,0,
+NEP_DNE,Dendronephthya,SC,0,0,
+HEL,Heliopora (Blue coral),SC,1,1,Heliopora
+NEP_LTP,Lithophyton,SC,0,0,
+SAR_LBP,Lobophytum,SC,0,0,
+NEP_OTH,Other Nephtheidae,SC,0,0,
+SAR_OTH,Other Sarcophytidae (Alcyoniidae),SC,0,0,
+XEN_OTH,Other Xeniidae,SC,0,0,
+OT_SC,Others - Soft Corals,SC,0,0,
+SAR_SAR,Sarcophyton,SC,0,0,
+SAR_SCP,Sclerophytum,SC,0,0,
+TUB_TUB,Tubipora,SC,1,1,Tubipora
+XEN_XEN,Xenia,SC,0,0,
+ACT,Actinaria (Anemones),SI,0,0,
+ASC,"Ascidiacea (Ascidians, Tunicates)",SI,0,0,
+BRY,Bryozoa (Bryozoans),SI,0,0,
+COR,Corallimorpharia (Corallimorphs),SI,0,0,
+HYR,Hydrozoa (Hydroids),SI,0,0,
+MIL,Millepora (Fire coral),SI,1,1,Millepora
+SI,Sessile Invertebrates,SI,0,0,
+ZOA,Zoantharia (Zoanthids),SI,0,0,
+SP_BR,Branching Sponge,SP,0,0,
+SP_EN,Encrusting Sponge,SP,0,0,
+SP_MA,Massive Sponge,SP,0,0,
+SP,Sponge,SP,0,0,
+SS_SA,Sand,SS,0,0,
+SS_SI,Silt,SS,0,0,
+HS_RM,Reef Matrix with Turf,TA,0,0,
+TA,Turf Algae,TA,0,0,
+TA_SD,Turf with Sediment,TA,0,0,
+HS_RB,Unconsolidated Rubble with Turf,TA,0,0,
+UN,Unknown/Unidentifiable,UN,0,0,
