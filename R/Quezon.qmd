@@ -107,28 +107,6 @@ dat <- read_csv("../PCSD-Repository/data/Quezon.csv", trim_ws = TRUE)
 #| label: examinData
 dat |> glimpse() 
 ```
-
-## head
-```{r}
-#| label: examinData1
-## Explore the first 6 rows of the data
-dat |> head() 
-```
-
-## str
-```{r}
-#| label: examinData2
-dat |> str() 
-```
-
-## Easystats (datawizard)
-```{r}
-#| label: examinData3
-dat |> datawizard::data_codebook() |> knitr::kable() 
-```
-:::
-
-
 # Data preparation
 
 Before we can model these data, they need to be processed into a
@@ -475,10 +453,6 @@ model1$fit |> stan_ess()
 
 ### Fit full model
 
-
-
-
-
 ### MCMC sampling diagnostics
 
 
@@ -544,16 +518,6 @@ model2 <- brm(form2,
 )
 ```
 
-
-```{r}
-model4 |> conditional_effects() |> 
-  plot() |> 
-  _[[1]]
-```
-
-```{r}
-model4 <- update(model4, sample_prior = "yes")
-```
 ```{r}
 model2 |> conditional_effects() |> 
   plot() |> 
@@ -817,18 +781,3 @@ site_map + inset_element(overview_map +
                          left = 0.55, bottom = 0.01,
                          right = 0.99, top = 0.45) 
 ```
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
